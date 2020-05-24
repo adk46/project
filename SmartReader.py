@@ -1,18 +1,22 @@
 from lxml import html
 import lxml.etree as et
 import requests
-import pandas as pd
 import os 
 import re
 import sys
 import tkinter as tk
 import tkinter.font as tkFont
 
+show_num = 5
 msg = []
-root = []
 color = []
 lz = []
 post_num = []
+show_quote = 1
+main_page = []
+pageNum = 1
+show_pages = []
+
 
 # --- classes ---
 
@@ -59,46 +63,117 @@ class ScrolledFrame(tk.Frame):
 
 class GetLink:
 
-    def __init__(self, parent, link):
+    def __init__(self, parent, top_panel):
         self.parent = parent
-        self.link = link
+        self.labelframe = top_panel
         self.create_widgets()
 
-    def get_input(self):
-        value = self.entry.get()
-        print('link:', value)
-        self.get_link(value)
-    
-    def load_more():
-        return
+
         
     def create_widgets(self):
-        self.labelframe = tk.LabelFrame(self.parent, text="Load huaren pages:                      ")
-        self.labelframe.pack(fill="both", expand=True)
+        global show_pages, show_num
+        self.label = tk.Label(self.labelframe, text="Please enter post link here:", anchor = "e", width = 30).grid(row=0, column = 0)
 
-        self.label = tk.Label(self.labelframe, text=self.link)
-        self.label.pack(expand=True, fill='both')
+        self.entry = tk.Entry(self.labelframe, width = 70)
+        self.entry.grid(row=0, column = 1)
 
-        self.entry = tk.Entry(self.labelframe)
-        self.entry.pack()
-
-        self.button = tk.Button(self.labelframe, text="Upload", command=self.get_input)
-        self.button.pack()       
+        self.button1 = tk.Button(self.labelframe, text="Load Page", command=self.get_input, width = 10).grid(row=0, column = 2, padx=(8,5))
+        self.prev_btn = tk.Button(self.labelframe, text="<<", command=self.get_prev, width = 3 )
+        self.prev_btn.grid(row=0, column = 3, padx=(10,5))
+        show_pages = tk.StringVar()
+        show_pages.set("Page: fr ~ to")
+        self.curr_btn = tk.Label(self.labelframe, textvariable=show_pages, width = 12)
+        self.curr_btn.grid(row=0, column = 4, padx=(5,5))
+        self.next_btn = tk.Button(self.labelframe, text=">>", command=self.get_next, width = 3)
+        self.next_btn.grid(row=0, column = 5, padx=(5,10))
         
-        self.text = tk.Text(self.labelframe, height=400, width=500, bg = "#fbf4cd")
-        #self.text.insert(tk.END, "Test", 'color')
-        #self.text.pack(side=tk.LEFT)
-        #scroll = tk.Scrollbar(self.labelframe, command=self.text.yview)
-        #self.text.configure(yscrollcommand=scroll.set)
-        self.text.tag_configure('bold_italics', font=('Arial', 12, 'bold', 'italic'))
-        self.text.tag_configure('big', font=('Verdana', 14, 'bold'))
-        self.text.tag_configure('owner', foreground='#e07b39', font=('SimHei', 14, 'bold'))
-        self.text.tag_configure('poster', foreground='green', font=('SimHei', 14, 'bold'))
+        self.page_label = tk.Label(self.labelframe, text="Pages per load:", anchor = "e", width = 20)
+        self.page_label.grid(row=0, column = 6)
+        self.page_per_load = tk.IntVar()
+        self.page_per_load.set(show_num)
+        self.load_entry = tk.Entry(self.labelframe, textvariable=self.page_per_load, width = 3)
+        self.load_entry.grid(row=0, column = 7)
+        
+        self.quote_btn = tk.Button(self.labelframe, text="Hide Quote", command=self.set_quote_flag, width = 10)
+        self.quote_btn.grid(row=0, column = 8, padx=(15,10))
+
+        self.textframe = tk.LabelFrame(self.parent)
+        self.textframe.pack(fill="both", expand=True, side='bottom')   
+        
+        self.text = tk.Text(self.textframe, height=700, width=500, bg = "#fbf4cd")
+        self.text.tag_configure('owner', foreground='#e07b39', font=('Tempus Sans ITC', 12, 'bold'))
+        self.text.tag_configure('poster', foreground='green', font=('Tempus Sans ITC', 12, 'bold'))
         self.text.tag_configure('other_post', foreground='blue', font=('KaiTi', 14))            
         self.text.tag_configure('owner_post', foreground='purple', font=('KaiTi', 14)) 
+        #self.text.tag_configure('floor', font=('Tempus Sans ITC', 12)) 
         self.text.tag_configure('quote', foreground='grey', font=('Tempus Sans ITC', 10))            
 
+    def get_input(self):
+        global show_num        
+        value = self.entry.get()
+        try:
+            update = self.page_per_load.get()
+        except ValueError:
+            print("expect an integer between 2-20")
+        else:
+            if ( update > 1 and update < 20):
+                show_num = update
+        print('link:', value)
+        self.get_link(value)   
+    
+    def get_prev(self):
+        global pageNum, show_num             
+
+        batch = int((pageNum-1)/show_num)
+        if ((pageNum - 1)%show_num == 0):
+            batch -= 1
+        print("batch = ", batch, " page num", pageNum)
+        if (batch > 0):           
+            pageNum = (batch -1) * show_num +1
+            print("prev page start from ", pageNum)
+            self.show_page() 
+
+        
+    def get_next(self):
+        global pageNum, show_num      
+        if (self.nextLoc > 0):
+            self.show_page()
+            
+        
+    def set_quote_flag(self):
+    
+        global show_quote
+        if (self.quote_btn['text'] == 'Hide Quote'):
+            self.quote_btn['text'] = 'Show Quote'
+            show_quote = 0
+            print("switch to show quote = ", show_quote)
+        elif (self.quote_btn["text"] == "Show Quote"):
+            self.quote_btn["text"] = "Hide Quote"
+            show_quote = 1
+            print("swtich to show_quote = ", show_quote)
+        
+            
+    def find_lz(self, link):
+        global main_page
+        
+        loc = link.find("page=")
+        main_page = link[:loc-1]
+        
+        first_page = link[:loc] + 'page=1'
+        
+        print('first page link:', first_page)
+            
+        page = requests.get(first_page)
+        pageStr = page.content.decode("utf-8")
+        tree = html.fromstring(pageStr)                   
+        poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
+        
+        return poster[0]       
+        
+        
     def get_link(self, link):
+        global lz, pageNum
+        
         self.text.delete('1.0', tk.END)
         loc = link.find("page=")
         
@@ -106,7 +181,9 @@ class GetLink:
             link += '&page=1'
             loc = link.find("page=")
 
-        print (loc)
+        lz = self.find_lz(link)
+        
+        print ('lz : ', lz)
         pageLoc = int(link[loc+5])
         print (pageLoc)
 
@@ -115,22 +192,8 @@ class GetLink:
 
         print ('main:', main)
         print ('page num = ', pageNum )
-            
-        oldSize = 0
         
-
-        newSize = self.show_page(link, pageNum)
-
-        #print('page size:', newSize)
-
-        #while abs(newSize - oldSize) > 1:
-        while newSize > 0:
-            oldSize = newSize
-            pageNum += 1
-            newLink = main + str(pageNum)
-            #print(newLink)
-            newSize = self.show_page(newLink, pageNum)
-           # print('page size:', newSize)
+        self.show_page()        
 
     def get_post(self, pageStr):
         post = []
@@ -142,8 +205,6 @@ class GetLink:
             loc_e = pageStr.find('</div>')
             #print(loc_e)
             post1 = pageStr[:loc_e]
-            #print(post)
-            #post.append(clean_url(post1))
             post.append(post1)
             pageStr = pageStr[loc_e+6:]
             #print(pageStr)
@@ -151,98 +212,78 @@ class GetLink:
 
         return post
            
-    def show_page(self, link, pageNum):
+    def show_page(self):
 
-        global root
-        global color, lz
+        #global root
+        global color, lz, pageNum, main_page
+        global show_quote
         
-        page = requests.get(link)
-        pageStr = page.content.decode("utf-8")
-        #print(pageStr)
-        print("============================")
-        #pageStr = re.sub(r"<a.href[^>]*>|</a>", "", pageStr)
-        #pageStr = re.sub('\<a href=.*?>(.*?)\</a>', '', pageStr)
-        #pageStr = re.sub('<a href.*[.|"]>', '', pageStr)
-        #pageStr = re.sub('<img src.*[.|"]>', '', pageStr)
-        #pageStr = re.sub('</a>', '', pageStr)
-        pageStr = re.sub('<br>', '\n', pageStr)
-        pageStr = re.sub('<blockquote>', '[quote_s]', pageStr)
-        pageStr = re.sub('</blockquote>', '[quote_e]', pageStr)
-        if (pageNum==430):
-            print(pageStr)
-
-        #sys.exit()
-        tree = html.fromstring(pageStr)  
-                  
-        poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
-        post = tree.find_class("wrap")      
-        #post = self.get_post(pageStr)  
+        self.text.delete('1.0', tk.END)
         
-        #print(poster)
-        if (pageNum == 1):
-            title = tree.find_class("topic-title")
-            print('** [title]  [', title[0].text_content(), ']')
-            lz = poster[0]
-        #post = tree.xpath('/div[@class="wrap"]/text()')
+        show_pages.set("Page: " + str(pageNum) + " ~ " + str(pageNum + show_num -1))
 
-        print ('\n == page ',pageNum, ' ==\n')
-        self.text.insert(tk.END, "\n === page " + str(pageNum) + "===\n", 'poster')
-        #self.label = tk.Label(self.labelframe, font=fontStyle, justify=tk.LEFT, text="== page " + str(pageNum) + " ==", fg = "green").pack()
-        msg = []
-        for i in range(len(poster)):
-            quote = []
-            print('[', poster[i], ']')
-            if (poster[i] == lz):
-                color = 'owner_post'
-                self.text.insert(tk.END, "\n["+poster[i]+"]", 'owner')
-            else:
-                color = 'other_post'
-                self.text.insert(tk.END, "\n["+poster[i]+"]",'poster')
-
-            msg = post[i].text_content()  
-
-            #msg = re.sub('<br>', '\n', msg)
+        pageCnt = 0
+        self.nextLoc = 1
+        while (self.nextLoc > 0 and pageCnt < show_num):
+            print("loading page ", pageNum)           
+            link = main_page + "&page=" + str(pageNum)
+            page = requests.get(link)
+            pageStr = page.content.decode("utf-8")
+            pageStr = re.sub('<br>', '\n', pageStr)
+            pageStr = re.sub('<blockquote>', '[quote_s]', pageStr)
+            pageStr = re.sub('</blockquote>', '[quote_e]', pageStr)
             
-            loc0 = msg.find('[quote_s]')
-       
-            if (loc0>=0):
-                loc = msg.find('[quote_e]')
-                quote = msg[loc0+9:loc]
-                if (loc0 == 0):
-                    msg = msg[loc+9:]
+            tree = html.fromstring(pageStr)  
+                      
+            poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
+            post = tree.find_class("wrap")   
+            floor = re.findall('class="btn btn-link">(.+)<sup>', pageStr)
+
+            print ('\n == page ',pageNum, ' ==\n')
+            self.text.insert(tk.END, "\n === Page " + str(pageNum) + " ===\n", 'poster')
+            #self.label = tk.Label(self.labelframe, font=fontStyle, justify=tk.LEFT, text="== page " + str(pageNum) + " ==", fg = "green").pack()
+            msg = []
+            for i in range(len(poster)):
+                quote = []
+                print('[', poster[i], ']')
+                if (poster[i] == lz):
+                    color = 'owner_post'
+                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ", 'owner')
                 else:
-                    msg = msg[:loc0]  
-                    
-                #quote = re.sub('<.*/.*>', '', quote)                               
-                match = re.search('(\n.*$)', quote)
-               
-                if (match):
-                    quote = "Re: ...." + match.group(0)
-                    quote = re.sub('\n', '', quote)
+                    color = 'other_post'
+                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ",'poster')
+                #self.text.insert(tk.END, floor[i]+"# ", 'floor')
 
-                    
-                self.text.insert(tk.END,quote, 'quote')     
+                msg = post[i].text_content().replace("\n\n", "\n")
 
-                #msg = re.sub('<.*/.*>', '', msg)
-            print('quote:', quote)                
-            print('msg:', msg)
-
-            self.text.insert(tk.END,msg +"\n", color)
-        
-            self.text.pack(side=tk.LEFT, pady = 15)
-            
-            if (i%5 == 0):
-                self.button = tk.Button(self.labelframe, text="Load more", command=self.load_more)
+                quote_start = msg.find('[quote_s]')
            
-        nextPage = "page=" + str(pageNum+1)    
-       # print("nextPage = ", nextPage)
-        nextLoc = page.text.find(nextPage) 
-        #sys.exit()
-       # print(nextLoc)
-        if (nextLoc == -1):
-            return nextLoc
-        else:
-            return len(page.text)
+                if (quote_start>=0):                
+                    quote_end = msg.rfind('[quote_e]') 
+                    quote = msg[quote_start+9:quote_end]
+                    msg = msg[:quote_start] + msg[quote_end+9:]
+                    quote = quote.replace("[quote_s]", "{").replace("[quote_e]", "}").replace("\n\n", "\n")
+                                         
+                    #quote = re.sub('<.*/.*>', '', quote)                               
+                    if (show_quote == 0):
+                        match = re.search('(\n.*$)', quote)              
+                        if (match):
+                            quote = "Re: ...." + match.group(0)
+                        
+                    self.text.insert(tk.END,quote, 'quote')     
+
+                print('quote:', quote)                
+                print('msg:', msg)
+
+                self.text.insert(tk.END,msg +"\n", color)
+            
+                self.text.pack(side=tk.LEFT, pady = 15)
+
+            pageNum += 1
+            pageCnt += 1
+            nextPage = "page=" + str(pageNum)    
+           # print("nextPage = ", nextPage)
+            self.nextLoc = page.text.find(nextPage) 
             
 # --- main ---
 
@@ -251,10 +292,14 @@ root.title("Smart Reader")
 root.geometry("1300x750")
 fontStyle = tkFont.Font(family="Lucida Grande", size=14)
 
+labelframe = tk.LabelFrame(root, text="Load huaren pages:")
+#labelframe = tk.LabelFrame(root)
+labelframe.pack(fill="both", expand=False, side = 'top')  
+        
 window = ScrolledFrame(root)
 window.pack(expand=True, fill='both', pady=15)
 
-GetLink(window.inner, "Please enter huaren link here: ")
+GetLink(window.inner, labelframe)
     
 
 root.mainloop()
