@@ -1,22 +1,34 @@
 from lxml import html
 import lxml.etree as et
 import requests
-import os 
+import os.path 
+from os import path 
 import re
 import sys
 import tkinter as tk
 import tkinter.font as tkFont
 
-show_num = 5
+global show_num 
+show_num = 10
+global blocked_IDs
+blocked_IDs=[]
 msg = []
 color = []
 lz = []
 post_num = []
+global show_quote
 show_quote = 1
 main_page = []
 pageNum = 1
 show_pages = []
-
+global bg_color
+bg_color='#fbf4cd'
+global owner_post
+owner_post = 'purple'
+global other_post
+other_post = 'blue'
+global font_size
+font_size=14
 
 # --- classes ---
 
@@ -72,6 +84,7 @@ class GetLink:
         
     def create_widgets(self):
         global show_pages, show_num
+        print('create widgets show_num = ', show_num)
         self.label = tk.Label(self.labelframe, text="Please enter post link here:", anchor = "e", width = 30).grid(row=0, column = 0)
 
         self.entry = tk.Entry(self.labelframe, width = 70)
@@ -100,13 +113,14 @@ class GetLink:
         self.textframe = tk.LabelFrame(self.parent)
         self.textframe.pack(fill="both", expand=True, side='bottom')   
         
-        self.text = tk.Text(self.textframe, height=700, width=500, bg = "#fbf4cd")
+        self.text = tk.Text(self.textframe, height=700, width=500)
+        self.text.configure(bg = bg_color)
         self.text.tag_configure('owner', foreground='#e07b39', font=('Tempus Sans ITC', 12, 'bold'))
         self.text.tag_configure('poster', foreground='green', font=('Tempus Sans ITC', 12, 'bold'))
-        self.text.tag_configure('other_post', foreground='blue', font=('KaiTi', 14))            
-        self.text.tag_configure('owner_post', foreground='purple', font=('KaiTi', 14)) 
-        #self.text.tag_configure('floor', font=('Tempus Sans ITC', 12)) 
-        self.text.tag_configure('quote', foreground='grey', font=('Tempus Sans ITC', 10))            
+        self.text.tag_configure('other_post', foreground=other_post, font=('KaiTi', font_size))            
+        self.text.tag_configure('owner_post', foreground=owner_post, font=('KaiTi', font_size)) 
+        self.text.tag_configure('quote', foreground='grey', font=('Tempus Sans ITC', 10))  
+        self.text.mark_set("refresh", "1.1")        
 
     def get_input(self):
         global show_num        
@@ -216,8 +230,8 @@ class GetLink:
 
         #global root
         global color, lz, pageNum, main_page
-        global show_quote
-        
+        global show_quote, blocked_IDs
+        print('show_page:', blocked_IDs)
         self.text.delete('1.0', tk.END)
         
         show_pages.set("Page: " + str(pageNum) + " ~ " + str(pageNum + show_num -1))
@@ -235,9 +249,10 @@ class GetLink:
             
             tree = html.fromstring(pageStr)  
                       
-            poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
+            poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')
+            
             post = tree.find_class("wrap")   
-            floor = re.findall('class="btn btn-link">(.+)<sup>', pageStr)
+            floor = re.findall('class="btn btn-link">(.*)<sup>#</sup>', pageStr)
 
             print ('\n == page ',pageNum, ' ==\n')
             self.text.insert(tk.END, "\n === Page " + str(pageNum) + " ===\n", 'poster')
@@ -245,39 +260,42 @@ class GetLink:
             msg = []
             for i in range(len(poster)):
                 quote = []
-                print('[', poster[i], ']')
-                if (poster[i] == lz):
-                    color = 'owner_post'
-                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ", 'owner')
+
+                if poster[i] in blocked_IDs:
+                    print(poster[i], 'found in blocked list')
+                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# - blocked\n", 'blocked')
+                    color = 'blocked'
                 else:
-                    color = 'other_post'
-                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ",'poster')
-                #self.text.insert(tk.END, floor[i]+"# ", 'floor')
+                    if (poster[i] == lz):
+                        color = 'owner_post'
+                        self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ", 'owner')
+                    else:
+                        color = 'other_post'
+                        self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ",'poster')                
+                    msg = post[i].text_content().replace("\n\n", "\n")
 
-                msg = post[i].text_content().replace("\n\n", "\n")
+                    quote_start = msg.find('[quote_s]')
+               
+                    if (quote_start>=0):                
+                        quote_end = msg.rfind('[quote_e]') 
+                        quote = msg[quote_start+9:quote_end]
+                        msg = msg[:quote_start] + msg[quote_end+9:]
+                        quote = quote.replace("[quote_s]", "{").replace("[quote_e]", "}").replace("\n\n", "\n")
+                                             
+                        #quote = re.sub('<.*/.*>', '', quote)                               
+                        if (show_quote == 0):
+                            match = re.search('(\n.*$)', quote)              
+                            if (match):
+                                quote = "Re: ...." + match.group(0)
+                            
+                        self.text.insert(tk.END,quote, 'quote')     
 
-                quote_start = msg.find('[quote_s]')
-           
-                if (quote_start>=0):                
-                    quote_end = msg.rfind('[quote_e]') 
-                    quote = msg[quote_start+9:quote_end]
-                    msg = msg[:quote_start] + msg[quote_end+9:]
-                    quote = quote.replace("[quote_s]", "{").replace("[quote_e]", "}").replace("\n\n", "\n")
-                                         
-                    #quote = re.sub('<.*/.*>', '', quote)                               
-                    if (show_quote == 0):
-                        match = re.search('(\n.*$)', quote)              
-                        if (match):
-                            quote = "Re: ...." + match.group(0)
-                        
-                    self.text.insert(tk.END,quote, 'quote')     
+                    print('quote:', quote)                
+                    print('msg:', msg)
 
-                print('quote:', quote)                
-                print('msg:', msg)
-
-                self.text.insert(tk.END,msg +"\n", color)
-            
-                self.text.pack(side=tk.LEFT, pady = 15)
+                    self.text.insert(tk.END,msg +"\n", color)
+                
+                    self.text.pack(side=tk.LEFT, pady = 15)
 
             pageNum += 1
             pageCnt += 1
@@ -285,7 +303,36 @@ class GetLink:
            # print("nextPage = ", nextPage)
             self.nextLoc = page.text.find(nextPage) 
             
+def LoadConfig(cfgFile):
+    global show_num, blocked_IDs, show_quote, bg_color, owner_post, other_post
+    
+    f = open(cfgFile, 'r', encoding="utf8")
+    for x in f:
+        key,value = x.split("=")
+        print ('[',key, "],[", value,']')
+        if key == "blocked_list":
+            blocked_IDs = value.rstrip().split(",")
+            print('blocked IDs:', blocked_IDs)
+        elif key == "pages_per_load":
+            show_num = value
+        elif key == "show_quote":
+            show_quote = value
+        elif key == "background_color":
+            bg_color=value.rstrip()
+        elif key == 'owner_post':
+            owner_post = value.rstrip()
+        elif key == 'other_post':
+            other_post = value.rstrip()
+        elif key == 'font_size':
+            font_size = value
+ 
+                
+    
 # --- main ---
+
+cfgFile = 'Reader.ini'
+if (path.exists(cfgFile)):
+    LoadConfig(cfgFile)
 
 root = tk.Tk()
 root.title("Smart Reader")
