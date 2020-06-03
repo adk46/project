@@ -1,12 +1,15 @@
+# 2020-05-31 v1.2 allow block by registration date
 from lxml import html
-import lxml.etree as et
 import requests
-import os.path 
 from os import path 
 import re
 import sys
 import tkinter as tk
 import tkinter.font as tkFont
+import base64
+import urllib
+from PIL import Image, ImageTk
+import io
 
 global show_num 
 show_num = 10
@@ -29,6 +32,12 @@ global other_post
 other_post = 'blue'
 global font_size
 font_size=14
+global pic
+pic=list()
+global block_id_by_date
+block_id_by_date = 0
+global block_id_post_date
+block_id_post_date='2099-12-31'
 
 # --- classes ---
 
@@ -122,9 +131,8 @@ class GetLink:
         self.text.tag_configure('quote', foreground='grey', font=('Tempus Sans ITC', 10))  
         self.text.mark_set("refresh", "1.1")        
 
-    def get_input(self):
-        global show_num        
-        value = self.entry.get()
+    def check_show_num(self):
+        global show_num 
         try:
             update = self.page_per_load.get()
         except ValueError:
@@ -132,10 +140,15 @@ class GetLink:
         else:
             if ( update > 1 and update < 20):
                 show_num = update
+                
+    def get_input(self):       
+        value = self.entry.get()
         print('link:', value)
-        self.get_link(value)   
+        self.get_link(value)  
+        self.check_show_num()
     
     def get_prev(self):
+        self.check_show_num()
         global pageNum, show_num             
 
         batch = int((pageNum-1)/show_num)
@@ -149,7 +162,7 @@ class GetLink:
 
         
     def get_next(self):
-        global pageNum, show_num      
+        self.check_show_num()      
         if (self.nextLoc > 0):
             self.show_page()
             
@@ -181,7 +194,7 @@ class GetLink:
         pageStr = page.content.decode("utf-8")
         tree = html.fromstring(pageStr)                   
         poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
-        
+        print(poster)
         return poster[0]       
         
         
@@ -229,9 +242,9 @@ class GetLink:
     def show_page(self):
 
         #global root
-        global color, lz, pageNum, main_page
+        global color, lz, pageNum, main_page, show_num
         global show_quote, blocked_IDs
-        print('show_page:', blocked_IDs)
+        print('show_page:', pageNum)
         self.text.delete('1.0', tk.END)
         
         show_pages.set("Page: " + str(pageNum) + " ~ " + str(pageNum + show_num -1))
@@ -241,8 +254,11 @@ class GetLink:
         while (self.nextLoc > 0 and pageCnt < show_num):
             print("loading page ", pageNum)           
             link = main_page + "&page=" + str(pageNum)
-            page = requests.get(link)
-            pageStr = page.content.decode("utf-8")
+            u=urllib.request.urlopen(link)
+            pageStr = u.read().decode("utf-8")
+            u.close()
+            #page = requests.get(link)
+            #pageStr = page.content.decode("utf-8")
             pageStr = re.sub('<br>', '\n', pageStr)
             pageStr = re.sub('<blockquote>', '[quote_s]', pageStr)
             pageStr = re.sub('</blockquote>', '[quote_e]', pageStr)
@@ -253,17 +269,21 @@ class GetLink:
             
             post = tree.find_class("wrap")   
             floor = re.findall('class="btn btn-link">(.*)<sup>#</sup>', pageStr)
+            reg_date = re.findall('注册时间</label><span>@<!-- -->(.*)</span>', pageStr)
 
             print ('\n == page ',pageNum, ' ==\n')
             self.text.insert(tk.END, "\n === Page " + str(pageNum) + " ===\n", 'poster')
-            #self.label = tk.Label(self.labelframe, font=fontStyle, justify=tk.LEFT, text="== page " + str(pageNum) + " ==", fg = "green").pack()
+            
             msg = []
             for i in range(len(poster)):
                 quote = []
-
-                if poster[i] in blocked_IDs:
+                if (poster[i] in blocked_IDs) :
                     print(poster[i], 'found in blocked list')
-                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# - blocked\n", 'blocked')
+                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# - blocked: find in blocked list\n", 'blocked')
+                    color = 'blocked'
+                elif block_id_by_date == 1 and reg_date[i] > block_id_post_date:
+                    print(poster[i], 'blocked due to registration')
+                    self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# - blocked: register date later than "+ block_id_post_date + "\n", 'blocked')
                     color = 'blocked'
                 else:
                     if (poster[i] == lz):
@@ -272,7 +292,7 @@ class GetLink:
                     else:
                         color = 'other_post'
                         self.text.insert(tk.END, "\n["+poster[i]+"] "+floor[i]+"# ",'poster')                
-                    msg = post[i].text_content().replace("\n\n", "\n")
+                    msg = post[i].text_content()
 
                     quote_start = msg.find('[quote_s]')
                
@@ -281,8 +301,7 @@ class GetLink:
                         quote = msg[quote_start+9:quote_end]
                         msg = msg[:quote_start] + msg[quote_end+9:]
                         quote = quote.replace("[quote_s]", "{").replace("[quote_e]", "}").replace("\n\n", "\n")
-                                             
-                        #quote = re.sub('<.*/.*>', '', quote)                               
+                                                                         
                         if (show_quote == 0):
                             match = re.search('(\n.*$)', quote)              
                             if (match):
@@ -296,16 +315,53 @@ class GetLink:
                     self.text.insert(tk.END,msg +"\n", color)
                 
                     self.text.pack(side=tk.LEFT, pady = 15)
+                    
+                    postStr = str(html.tostring(post[i]))
+                    quote_start = postStr.find('[quote_s]')
+               
+                    if (quote_start>=0):                
+                        quote_end = postStr.rfind('[quote_e]') 
+                        quote = postStr[quote_start+9:quote_end]
+                        postStr = postStr[:quote_start] + postStr[quote_end+9:]
+                     
+                    print(postStr)
 
+                    img_loc = postStr.find('<img src')                  
+
+                    if (img_loc >0):
+                        tree1 = html.fromstring(postStr)
+                        img_links = tree1.xpath('//img/@src')
+                        print('img links [', img_links, ']')
+                        
+                        global pic
+                        for j in range(len(img_links)):
+                            print("img url = [", img_links[j], "]")
+                            try:
+                                u1 = urllib.request.urlopen(img_links[j]) 
+                                image_file = io.BytesIO(u1.read())
+                                u1.close()
+                                im = Image.open(image_file)
+                                [imgWidth, imgHeight] = im.size
+                                im = im.resize((int(imgWidth/2), int(imgHeight/2)), Image.ANTIALIAS)
+                                img = ImageTk.PhotoImage(image=im)
+                                self.text.image_create(tk.END, image=img)
+                                self.text.pack(side=tk.LEFT)
+                                pic.append(img)
+                            except:
+                                print('failed to open')
+                            #else:
+
+                            
             pageNum += 1
             pageCnt += 1
             nextPage = "page=" + str(pageNum)    
            # print("nextPage = ", nextPage)
-            self.nextLoc = page.text.find(nextPage) 
+            self.nextLoc = pageStr.find(nextPage) 
             
 def LoadConfig(cfgFile):
     global show_num, blocked_IDs, show_quote, bg_color, owner_post, other_post
-    
+    global block_id_by_date, block_id_post_date
+    block_id_by_date = 0
     f = open(cfgFile, 'r', encoding="utf8")
     for x in f:
         key,value = x.split("=")
@@ -314,7 +370,7 @@ def LoadConfig(cfgFile):
             blocked_IDs = value.rstrip().split(",")
             print('blocked IDs:', blocked_IDs)
         elif key == "pages_per_load":
-            show_num = value
+            show_num = int(value)
         elif key == "show_quote":
             show_quote = value
         elif key == "background_color":
@@ -325,6 +381,10 @@ def LoadConfig(cfgFile):
             other_post = value.rstrip()
         elif key == 'font_size':
             font_size = value
+        elif key == 'block_id_reg_date':
+            if value < '2099-12-31' :
+                block_id_by_date = 1
+                block_id_post_date = value
  
                 
     
@@ -340,7 +400,6 @@ root.geometry("1300x750")
 fontStyle = tkFont.Font(family="Lucida Grande", size=14)
 
 labelframe = tk.LabelFrame(root, text="Load huaren pages:")
-#labelframe = tk.LabelFrame(root)
 labelframe.pack(fill="both", expand=False, side = 'top')  
         
 window = ScrolledFrame(root)
