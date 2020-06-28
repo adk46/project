@@ -1,4 +1,5 @@
 # 2020-05-31 v1.2 allow block by registration date
+# 2020-06-27 v1.3 update
 from lxml import html
 import requests
 from os import path 
@@ -189,10 +190,13 @@ class GetLink:
         first_page = link[:loc] + 'page=1'
         
         print('first page link:', first_page)
-            
-        page = requests.get(first_page)
-        pageStr = page.content.decode("utf-8")
-        tree = html.fromstring(pageStr)                   
+        user_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0'}
+        response = requests.get(first_page, headers=user_agent)
+        pageStr = response.content.decode("utf-8")
+        response.close()    
+        #page = requests.get(first_page)
+        #pageStr = page.content.decode("utf-8")
+        tree = html.fromstring(pageStr)        
         poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')        
         print(poster)
         return poster[0]       
@@ -254,11 +258,10 @@ class GetLink:
         while (self.nextLoc > 0 and pageCnt < show_num):
             print("loading page ", pageNum)           
             link = main_page + "&page=" + str(pageNum)
-            u=urllib.request.urlopen(link)
-            pageStr = u.read().decode("utf-8")
-            u.close()
-            #page = requests.get(link)
-            #pageStr = page.content.decode("utf-8")
+            user_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/54.0'}
+            response = requests.get(link, headers=user_agent)
+            pageStr = response.content.decode("utf-8")
+            response.close()
             pageStr = re.sub('<br>', '\n', pageStr)
             pageStr = re.sub('<blockquote>', '[quote_s]', pageStr)
             pageStr = re.sub('</blockquote>', '[quote_e]', pageStr)
@@ -268,6 +271,10 @@ class GetLink:
             poster = tree.xpath('//div[@class="name online" or @class="name offline"]/text()')
             
             post = tree.find_class("wrap")   
+            #portrait = tree.xpath('//div/img/@src')
+            #print('getting portaite')
+            #print('portrait = ', portrait)
+            #sys.exit()
             floor = re.findall('class="btn btn-link">(.*)<sup>#</sup>', pageStr)
             reg_date = re.findall('注册时间</label><span>@<!-- -->(.*)</span>', pageStr)
 
@@ -324,17 +331,19 @@ class GetLink:
                         quote = postStr[quote_start+9:quote_end]
                         postStr = postStr[:quote_start] + postStr[quote_end+9:]
                      
-                    print(postStr)
+                    #print(postStr)
 
                     img_loc = postStr.find('<img src')                  
 
                     if (img_loc >0):
                         tree1 = html.fromstring(postStr)
                         img_links = tree1.xpath('//img/@src')
+                        print(postStr)
                         print('img links [', img_links, ']')
                         
-                        global pic
-                        for j in range(len(img_links)):
+                        global pic 
+                        
+                        for j in range(min(len(img_links),5)):
                             print("img url = [", img_links[j], "]")
                             try:
                                 u1 = urllib.request.urlopen(img_links[j]) 
@@ -360,7 +369,7 @@ class GetLink:
             
 def LoadConfig(cfgFile):
     global show_num, blocked_IDs, show_quote, bg_color, owner_post, other_post
-    global block_id_by_date, block_id_post_date
+    global block_id_by_date, block_id_post_date,font_size
     block_id_by_date = 0
     f = open(cfgFile, 'r', encoding="utf8")
     for x in f:
@@ -380,7 +389,7 @@ def LoadConfig(cfgFile):
         elif key == 'other_post':
             other_post = value.rstrip()
         elif key == 'font_size':
-            font_size = value
+            font_size = int(value)
         elif key == 'block_id_reg_date':
             if value < '2099-12-31' :
                 block_id_by_date = 1
